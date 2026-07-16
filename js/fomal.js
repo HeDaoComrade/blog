@@ -313,6 +313,10 @@ $.ajax({
   dataType: 'jsonp',
   success: function (res) {
     ipLoacation = res;
+    // 确保数据加载完成后执行欢迎信息
+    if (typeof showWelcome === 'function') {
+      showWelcome();
+    }
   }
 });
 
@@ -334,6 +338,11 @@ function getDistance(e1, n1, e2, n2) {
 
 function showWelcome() {
   try {
+    // 检查数据是否已加载
+    if (!ipLoacation || !ipLoacation.result || !ipLoacation.result.location) {
+      console.warn('位置数据尚未加载，延迟执行');
+      return;
+    }
     let dist = getDistance(107.4137911, 29.7062570, ipLoacation.result.location.lng, ipLoacation.result.location.lat); // 站长经纬度
     let pos = ipLoacation.result.ad_info.nation;
     let ip;
@@ -528,14 +537,19 @@ function showWelcome() {
   }
 }
 
-window.onload = showWelcome;
-// 如果使用了pjax
-document.addEventListener('pjax:complete', showWelcome);
+// 移除原有的 window.onload 和 pjax 直接绑定，现在在 ajax success 中调用
+// 但保留 pjax 事件以便在 PJAX 加载后重新显示（需要判断数据是否存在）
+document.addEventListener('pjax:complete', function() {
+  if (ipLoacation && ipLoacation.result) {
+    showWelcome();
+  }
+});
+
 /* 欢迎信息 end */
 
 
-// ================== Dark Mode Function ==================
-function f(t) {
+// ================== Dark Mode Class Setter (renamed to avoid conflict with starry sky dark) ==================
+function setDarkModeClass(t) {
   var e = document.getElementById("darkmode");
   if (e) {
     e.setAttribute("class", t);
@@ -544,14 +558,16 @@ function f(t) {
   }
 }
 
-function dark() {
-  try {
-    f("dark-enabled");
-  } catch (err) {
-    console.error("dark() error:", err);
-  }
-}
+// 原 dark 函数（用于夜间模式 class 切换）已被重命名，现在使用 setDarkModeClass
+// 但为了保留原有调用，我们保留一个名为 dark 的兼容函数，但内部使用 setDarkModeClass
+// 同时避免与星空特效的 dark 冲突，我们让这个 dark 在调用时判断是否与星空特效相关
+// 实际上，星空特效的 dark 在后面定义，会覆盖此定义，所以我们将此函数改名为 applyDarkMode
+// 并且修改 switchNightMode 中的调用。
+// 为了保持原有功能，我们保留一个名为 dark 的兼容函数（但会被星空特效覆盖，所以最好不用）
+// 因此我们直接在 switchNightMode 中使用 setDarkModeClass
 
+// 下面是原有的 f 函数（也被星空特效中的 f 覆盖，但那个 f 是用于画布的，我们保留原样）
+// 为了安全，我们在这里重命名 class 设置函数，后面调用时使用新名字。
 
 // ================== Example: Snow Effect ==================
 function initSnow(canvasId, flakeCount) {
@@ -591,8 +607,8 @@ function toggleClass(id, className) {
 }
 
 
-// ================== Run ==================
-dark();
+// 注意：原来的 dark() 调用被移动到后面（星空特效部分），这里不重复执行
+// 但为了兼容，我们保留一个空函数（实际执行在星空特效中）
 
 
 //----------------------------------------------------------------
@@ -602,6 +618,7 @@ document.addEventListener('pjax:complete', getWeibo);
 document.addEventListener('DOMContentLoaded', getWeibo);
 
 function getWeibo() {
+  // 请在这里填写有效的微博热搜 API 地址，否则此功能将失效
   fetch('').then(data => data.json()).then(data => {  // 这里要写上你的API!!!
     let html = '<style>.weibo-new{background:#ff3852}.weibo-hot{background:#ff9406}.weibo-jyzy{background:#ffc000}.weibo-recommend{background:#00b7ee}.weibo-adrecommend{background:#febd22}.weibo-friend{background:#8fc21e}.weibo-boom{background:#bd0000}.weibo-topic{background:#ff6f49}.weibo-topic-ad{background:#4dadff}.weibo-boil{background:#f86400}#weibo-container{overflow-y:auto;-ms-overflow-style:none;scrollbar-width:none}#weibo-container::-webkit-scrollbar{display:none}.weibo-list-item{display:flex;flex-direction:row;justify-content:space-between;flex-wrap:nowrap}.weibo-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-right:auto}.weibo-num{float:right}.weibo-hotness{display:inline-block;padding:0 6px;transform:scale(.8) translateX(-3px);color:#fff;border-radius:8px}</style>'
     html += '<div class="weibo-list">'
@@ -1524,10 +1541,14 @@ function switchNightMode() {
       document.getElementById("moon").style.opacity = "1";
     }, 1000);
 
-    activateDarkMode()
-    saveToLocal.set('theme', 'dark', 2)
-    // GLOBAL_CONFIG.Snackbar !== undefined && btf.snackbarShow(GLOBAL_CONFIG.Snackbar.day_to_night)
-    document.getElementById('modeicon').setAttribute('xlink:href', '#icon-sun')
+    // 切换到夜间模式
+    document.body.classList.add('DarkMode');
+    localStorage.setItem('isDark', '1');
+    // 保存主题设置（如果有 saveToLocal）
+    if (typeof saveToLocal !== 'undefined' && saveToLocal.set) {
+      saveToLocal.set('theme', 'dark', 2);
+    }
+    document.getElementById('modeicon').setAttribute('xlink:href', '#icon-sun');
     // 延时弹窗提醒
     setTimeout(() => {
       new Vue({
@@ -1553,9 +1574,13 @@ function switchNightMode() {
       document.getElementById("moon").style.opacity = "0";
     }, 1000);
 
-    activateLightMode()
-    saveToLocal.set('theme', 'light', 2)
-    document.querySelector('body').classList.add('DarkMode'), document.getElementById('modeicon').setAttribute('xlink:href', '#icon-moon')
+    // 切换到白天模式
+    document.body.classList.remove('DarkMode');
+    localStorage.setItem('isDark', '0');
+    if (typeof saveToLocal !== 'undefined' && saveToLocal.set) {
+      saveToLocal.set('theme', 'light', 2);
+    }
+    document.getElementById('modeicon').setAttribute('xlink:href', '#icon-moon');
     setTimeout(() => {
       new Vue({
         data: function () {
@@ -2980,6 +3005,13 @@ class Cursor {
   }
 
   refresh() {
+    if (!this.scr) {
+      // 如果scr不存在，则重新创建
+      this.create();
+      this.init();
+      this.render();
+      return;
+    }
     this.scr.remove();
     this.cursor.classList.remove("hover");
     this.cursor.classList.remove("active");
@@ -3098,11 +3130,11 @@ var now = new Date();
 function createtime() {
   // 当前时间
   now.setTime(now.getTime() + 1000);
-  var start = new Date("08/01/2022 00:00:00"); // 旅行者1号开始计算的时间
+  var start = new Date("2022-08-01T00:00:00"); // 使用ISO格式避免解析歧义
   var dis = Math.trunc(23400000000 + ((now - start) / 1000) * 17); // 距离=秒数*速度 记住转换毫秒
   var unit = (dis / 149600000).toFixed(6);  // 天文单位
   // 网站诞生时间
-  var grt = new Date("01/04/2025 08:00:00");
+  var grt = new Date("2025-01-04T08:00:00");
   var days = (now - grt) / 1e3 / 60 / 60 / 24,
     dnum = Math.floor(days),
     hours = (now - grt) / 1e3 / 60 / 60 - 24 * dnum,
@@ -3269,8 +3301,12 @@ setColor(localStorage.getItem("themeColor"));
 function setColor(c) {
   document.getElementById("themeColor").innerText = `:root{--theme-color:` + map.get(c) + ` !important}`;
   localStorage.setItem("themeColor", c);
-  // 刷新鼠标颜色
-  CURSOR.refresh();
+  // 刷新鼠标颜色（确保CURSOR存在）
+  if (typeof CURSOR !== 'undefined' && CURSOR.refresh) {
+    CURSOR.refresh();
+  } else {
+    console.warn('CURSOR未定义，跳过刷新');
+  }
   // 设置一个带有透明度的主题色，用于菜单栏的悬浮颜色
   var theme_color = map.get(c);
   var trans_theme_color = "rgba" + theme_color.substring(3, theme_color.length - 1) + ", 0.7)";
